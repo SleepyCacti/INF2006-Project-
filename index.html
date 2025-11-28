@@ -1,0 +1,145 @@
+<html>
+    <head>
+        <title>Product Sales & Exposure Insights</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>
+            body { 
+                font-family: 'Inter', sans-serif; 
+                background-color: #f7f9fb;
+            }
+            .card {
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+            }
+            .btn-primary {
+                transition: background-color 0.2s;
+            }
+            .btn-primary:hover {
+                background-color: #1e40af; /* Darker blue on hover */
+            }
+            .loading-text {
+                animation: pulse 1.5s infinite;
+            }
+            @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+            }
+            table { 
+                border-collapse: collapse; 
+                width: 100%; 
+            }
+            th, td { 
+                border: 1px solid #e5e7eb; /* Light gray border */
+                padding: 12px 16px; 
+                text-align: left; 
+            }
+            th { 
+                background-color: #f3f4f6; 
+                font-weight: 600;
+                text-transform: uppercase;
+                font-size: 0.75rem;
+                letter-spacing: 0.05em;
+            }
+            pre.error { 
+                background-color: #fee2e2; 
+                color: #991b1b; 
+                padding: 1em; 
+                border: 1px solid #f87171; 
+                border-radius: 0.375rem;
+            }
+        </style>
+    </head>
+    <body class="p-8 md:p-12">
+        <div class="max-w-4xl mx-auto">
+            <h1 class="text-3xl font-bold text-gray-900 mb-6">Spark Sales Analysis Dashboard</h1>
+            <p class="text-gray-600 mb-8">Run real-time aggregations on your market data via the Apache Livy API on EMR.</p>
+            
+            <div class="card bg-white p-6 rounded-lg mb-8">
+                <form id="job-form" class="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 items-center">
+                    <label for="query" class="text-gray-700 font-medium whitespace-nowrap">Select Insight:</label>
+                    <select name="query" id="query" class="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
+                        <option value="platform_exposure">Platform Exposure (Total Units Sold/Transactions)</option>
+                        <option value="category_performance">Category Performance (Avg Price & Rating)</option>
+                    </select>
+                    <button type="submit" class="btn-primary bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 w-full sm:w-auto">
+                        Run Spark Analysis
+                    </button>
+                </form>
+            </div>
+
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Analysis Result:</h3>
+            <div id="loading" class="loading-text text-blue-600 text-lg font-medium hidden">
+                <div class="flex items-center space-x-2">
+                    <!-- Simple SVG Loading Spinner -->
+                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Running Spark job via Livy... Please wait.
+                </div>
+            </div>
+            
+            <div id="result-container" class="card bg-white p-6 rounded-lg">
+                No results yet. Click "Run Spark Analysis" to generate insights.
+            </div>
+
+            <!-- Load jQuery for simple AJAX handling -->
+            <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+            <script>
+                // Function to convert JSON data array into an HTML table
+                function buildTable(data) {
+                    if (!data || data.length === 0) return '<p class="text-gray-500">Query returned no results or all rows were filtered out.</p>';
+                    
+                    let headers = Object.keys(data[0]);
+                    let headerHtml = '<tr>';
+                    
+                    headers.forEach(header => { 
+                        // Clean up column names for display
+                        let displayHeader = header.replace(/_/g, ' ').toUpperCase();
+                        headerHtml += `<th>${displayHeader}</th>`; 
+                    });
+                    headerHtml += '</tr>';
+                    
+                    let bodyHtml = '';
+                    data.forEach(row => {
+                        bodyHtml += '<tr>';
+                        headers.forEach(header => { 
+                            // Format numbers for better readability if needed
+                            let value = row[header] !== null ? row[header] : 'N/A';
+                            bodyHtml += `<td>${value}</td>`; 
+                        });
+                        bodyHtml += '</tr>';
+                    });
+                    
+                    return `<table><thead>${headerHtml}</thead><tbody>${bodyHtml}</tbody></table>`;
+                }
+
+                // AJAX submission handler
+                $('#job-form').on('submit', function(e) {
+                    e.preventDefault();
+                    $('#loading').removeClass('hidden').show();
+                    $('#result-container').html('<p class="text-blue-600">Submitting job to Livy...</p>');
+                    
+                    $.ajax({
+                        url: '/run_job',
+                        method: 'POST',
+                        data: $(this).serialize(),
+                        success: function(data) {
+                            $('#loading').hide();
+                            if (data.error) {
+                                $('#result-container').html(`<pre class="error">Error: ${data.error}</pre>`);
+                            } else {
+                                let tableHtml = buildTable(data.result);
+                                $('#result-container').html(tableHtml);
+                            }
+                        },
+                        error: function(jqXHR) {
+                            $('#loading').hide();
+                            $('#result-container').html(`<pre class="error">An unexpected server error occurred. Status: ${jqXHR.status} ${jqXHR.statusText}</pre>`);
+                        },
+                    });
+                });
+            </script>
+        </div>
+    </body>
+</html>
